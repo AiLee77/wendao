@@ -1,0 +1,24 @@
+{
+  "name": "wendao",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "build": "node tools/build.mjs && nodeloc-apps dev",
+    "test": "node --test test/flows.test.mjs test/client.test.mjs",
+    "balance": "node tools/balance.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "playwright-core": "^1.62.1"
+  },
+  "private": true
+}
