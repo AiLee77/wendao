@@ -195,7 +195,7 @@ test("seeds reach players from the 坊市 pool and from won fights", async () =>
     for (const s of shopView(c, day)) {
       if (!itemOf(s.id)?.fx?.seed) continue;
       found++;
-      assert.ok(s.n >= 2 && s.n <= 5, `seed stock ${s.n}`);
+      assert.ok(s.n >= 5 && s.n <= 10, `seed stock ${s.n}`); // v34 起一格 5-10 颗（旧的 2-5 颗玩家反馈「没天都不够种」）
     }
   }
   assert.ok(found > 0, "the shop stocks seeds");

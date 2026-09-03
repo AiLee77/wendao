@@ -285,15 +285,15 @@ test("first-day guide pays each step once and a bonus on completion; reborn char
   assert.equal(v.data.home.tut, null);
 });
 
-test("breakthrough mercy: each consecutive failure adds +10% to the shown and rolled chance, reset on success", async () => {
+test("breakthrough mercy: each consecutive failure adds +15% to the shown and rolled chance, reset on success", async () => {
   const site = new Site();
   await create(site, 1, "非酋");
   site.setChar(1, (c) => { c.tutDone = true; c.xp = xpNeed(c); c.btStreak = 3; });
   let v = await site.call(1, "home");
-  assert.ok(Math.abs(v.data.home.btChance - 0.98) < 1e-9, "85% + 30% capped at 98%: " + v.data.home.btChance);
+  assert.ok(Math.abs(v.data.home.btChance - 0.98) < 1e-9, "90% + 45% capped at 98%: " + v.data.home.btChance);
   site.setChar(1, (c) => { c.btStreak = 1; c.dbf.qi = site.now + 1000000; });
   v = await site.call(1, "home");
-  assert.ok(Math.abs(v.data.home.btChance - 0.75) < 1e-9, "85% - 20% qi + 10% streak");
+  assert.ok(Math.abs(v.data.home.btChance - 0.85) < 1e-9, "90% - 20% qi + 15% streak: " + v.data.home.btChance);
   site.setChar(1, (c) => { c.btStreak = 9; });
   const r = await site.call(1, "bt");
   assert.equal(r.success, true, "98% with streak 9 (seeded)");

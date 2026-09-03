@@ -681,14 +681,14 @@ c.mpP=Math.min(1,c.mpP+0.1);
 return{ok:true,msg:`一呼一吸间，修为 +${gain}，拾得灵石 +${ls}`,gain,ls};
 }
 function breakthroughChance(c,st){
-const base=c.r===0?0.85:Math.max(0.45,0.75-c.r*0.03);
+const base=c.r===0?0.9:Math.max(0.55,0.82-c.r*0.03);
 let p=base+st.bt+(c.pillBt??0);
 if(c.tox>40)p-=0.1;
 if(c.tox>70)p-=0.15;
 if(st.injured)p-=0.15;
 if(st.heart)p-=0.1;
 if(st.qi)p-=0.2;
-p+=0.1*(c.btStreak??0); 
+p+=0.15*(c.btStreak??0); 
 return Math.max(0.05,Math.min(0.98,p));
 }
 
@@ -711,10 +711,13 @@ return{ok:true,success:true,msg:`丹田一震，你踏入了${realmName(c.r, c.s
 }
 c.stats.btFail++;
 c.btStreak=(c.btStreak??0)+1;
-c.xp=Math.max(0,c.xp-need*0.3);
-c.dbf.qi=now+12*HOUR;
-c.hpP=Math.max(0.1,c.hpP-0.4);
-return{ok:true,success:false,msg:"灵气逆冲，你走火入魔，修为损失三成。十二小时内修炼迟滞。",p};
+
+
+c.xp=Math.max(0,c.xp-need*0.1);
+c.dbf.qi=now+4*HOUR;
+c.hpP=Math.max(0.15,c.hpP-0.25);
+const next=Math.round(Math.min(0.98,p+0.15)*100);
+return{ok:true,success:false,msg:`灵气逆冲，你走火入魔，修为损失一成，四小时内修炼迟滞。心境却也磨利了一分——下次成功率 ${next}%。`,p};
 }
 function choosePath(c,id){
 const p=pathOf(id);
@@ -953,6 +956,10 @@ return{stack,arts,eq:c.eq,cap:{stack:STACK_CAP,arts:ART_CAP}};
 
 // ---- lib/game/tribulation.js
 const BOLTS={1:3,2:5,3:6,4:7,5:8,6:9,7:9,8:9,9:12};
+
+
+
+const refHp=(c)=>10*basePower(c.r,c.s);
 const ACTIONS=["tank","parry","dodge","artifact","talisman","pill"];
 function bolts(target,seed){
 const rng=makeRng(seed);
@@ -985,6 +992,23 @@ function tribView(c,st){
 if(!c.trib)return null;
 const T=c.trib;
 const list=bolts(T.target,T.seed);
+const bolt=list[T.i];
+const pm=pathOf(c.path)?.trib??{};
+
+
+let base=refHp(c)*(bolt?.p??0)*1.05*(1-Math.min(0.5,st.trib))*(1-Math.min(0.32,(c.tribStreak??0)*0.08));
+if(c.root.t==="bian"&&bolt?.k==="雷")base*=0.75;
+if(bolt?.k==="心魔")base*=1-(0.15+Math.min(0.5,(c.wu??0)*0.02)+(st.heart?-0.2:0));
+const pctOf=(d)=>Math.min(999,Math.round((d / Math.max(1,st.hp))*100));
+const dodgeP=0.3+(pm.dodge??0)+Math.min(0.2,st.spd / (st.spd+200));
+const forecast={
+tank:pctOf(base*0.8*(1-(pm.tank??0))),
+parry:T.mp>=0.1?pctOf(base*0.5*(1-(pm.ward??0))):null,
+dodge:T.mp>=0.15?Math.round(dodgeP*100):null,
+artifact:T.art>0&&c.eq.w?pctOf(base*0.3):null,
+talisman:countOf(c,"t_bilei")>0?0:null,
+hp:Math.round(T.hp*100),
+};
 return{
 target:T.target,targetName:T.target>=ASCEND_REALM?"飞升":REALMS[T.target].name,
 i:T.i,n:T.n,hp:T.hp,mp:T.mp,art:T.art,bolts:list.slice(0,T.i+1),log:T.log.slice(-6),
@@ -994,7 +1018,7 @@ talisman:countOf(c,"t_bilei")>0,
 pill:countOf(c,"p_dingxin")>0,
 parry:T.mp>=0.1,dodge:T.mp>=0.15,
 },
-maxHp:st.hp,maxMp:st.mp,
+forecast,maxHp:st.hp,maxMp:st.mp,
 };
 }
 
@@ -1007,14 +1031,15 @@ const list=bolts(T.target,T.seed);
 const bolt=list[T.i];
 const rng=makeRng(`${T.seed}:${T.i}:${action}`);
 const pm=pathOf(c.path)?.trib??{}; 
-let dmg=st.hp*bolt.p*(0.9+rng.next()*0.3);
+let dmg=refHp(c)*bolt.p*(0.9+rng.next()*0.3);
 dmg*=1-Math.min(0.5,st.trib);
+dmg*=1-Math.min(0.32,(c.tribStreak??0)*0.08); 
 if(c.root.t==="bian"&&bolt.k==="雷")dmg*=0.75;
 let note="";
 let mpCost=0;
 if(bolt.k==="心魔"){
 
-const resist=Math.min(0.6,(c.wu??0)*0.02)+(st.heart?-0.2:0);
+const resist=0.15+Math.min(0.5,(c.wu??0)*0.02)+(st.heart?-0.2:0);
 dmg*=1-resist;
 note="心魔幻象";
 }
@@ -1056,13 +1081,15 @@ if(T.hp<=0){
 const target=T.target;
 c.trib=null;
 c.hpP=0.1;c.mpP=0.2;
-c.dbf.injury=now+24*HOUR;
-c.xp=Math.max(0,c.xp-xpNeed(c)*0.5);
-c.lifeBonus=(c.lifeBonus??0)-10;
-if(c.r>=2&&c.s>0)c.s--;
+c.dbf.injury=now+12*HOUR;
+
+
+c.xp=Math.max(0,c.xp-xpNeed(c)*0.3);
+c.lifeBonus=(c.lifeBonus??0)-5;
+c.tribStreak=Math.min(4,(c.tribStreak??0)+1);
 c.stats.btFail++;
 c.pillBt=0;
-return{ok:true,done:true,success:false,msg:`第${T.i}道${bolt.k}劫落下，你倒在了雷光里。重伤、跌境、折寿十年。${target >= 2 ? "但你还活着。" : ""}`,trib:null,log:T.log};
+return{ok:true,done:true,success:false,msg:`第${T.i}道${bolt.k}劫落下，你倒在了雷光里。重伤、折寿五年，修为损了三成。渡劫的经验刻进了骨头——下次雷劫伤害 -${c.tribStreak * 8}%。`,trib:null,log:T.log};
 }
 if(T.i>=T.n){
 
@@ -1073,6 +1100,7 @@ c.r=target;
 c.s=0;
 c.hpP=Math.max(0.2,T.hp);c.mpP=Math.max(0.2,T.mp);
 c.pillBt=0;
+c.tribStreak=0;
 c.wu+=2;
 const ascended=target>=ASCEND_REALM;
 if(ascended)c.ascended=true;
@@ -2754,11 +2782,16 @@ return{ok:true,success:true,msg:okAdd?`${isPill ? "丹成" : "炼成"}：${out.n
 }
 
 // ---- lib/game/shop.js
-const SHOP_SLOTS=8;
+const SHOP_SLOTS=10;
+const SHOP_REFRESH_DAILY=3;
+
+const refreshCost=(c)=>Math.round((80+60*c.r)*((c.daily.shopRe??0)+1));
+
 
 function shopStock(c,day){
 const r=TIER_OF_REALM[Math.max(0,Math.min(8,c.r|0))];
-const rng=makeRng(`shop:${day}:${r}`);
+const re=c.daily?.shopRe??0;
+const rng=makeRng(`shop:${day}:${r}${re ? ":" + re + ":" + c.uid : ""}`);
 const maxT=Math.min(5,r+1); 
 const pool=ITEMS.filter((i)=>i.t<=maxT&&i.k!=="misc"||(i.k==="misc"&&(i.fx?.array||i.fx?.seed)&&i.t<=maxT));
 const weighted=pool.map((i)=>[i,i.t===maxT?1:i.t===maxT-1?3:2]);
@@ -2767,14 +2800,14 @@ const seen=new Set();
 const add=(it)=>{
 if(!it||seen.has(it.id))return false;
 seen.add(it.id);
-const n=it.k==="mat"?rng.int(3,8):it.k==="pill"||it.k==="tal"?rng.int(1,3):it.fx?.seed?rng.int(2,5):1;
+const n=it.k==="mat"?rng.int(3,8):it.k==="pill"||it.k==="tal"?rng.int(2,5):it.fx?.seed?rng.int(5,10):1;
 picks.push({idx:picks.length,id:it.id,n,left:n,price:Math.round(it.v*1.25)});
 return true;
 };
 
 
 const seeds=pool.filter((i)=>i.fx?.seed);
-if(seeds.length)add(rng.pick(seeds));
+if(seeds.length){add(rng.pick(seeds));add(rng.pick(seeds));}
 let guard=0;
 while(picks.length<SHOP_SLOTS&&guard++<60)add(rng.weighted(weighted));
 return picks;
@@ -2787,6 +2820,16 @@ return stock.map((s)=>{
 const d=itemOf(s.id);
 return{...s,left:Math.max(0,s.n-(bought[s.id]??0)),price:Math.round(s.price*disc),name:d.name,k:d.k,t:d.t,desc:d.desc,fx:d.fx??null,st:d.st??null,slot:d.slot??null};
 });
+}
+
+function shopRefresh(c){
+const used=c.daily.shopRe??0;
+if(used>=SHOP_REFRESH_DAILY)return{ok:false,msg:`今日已请商队补货 ${SHOP_REFRESH_DAILY} 次`};
+const cost=refreshCost(c);
+if(c.ls<cost)return{ok:false,msg:`请商队跑一趟需 ${cost} 灵石`};
+c.ls-=cost;
+c.daily.shopRe=used+1;
+return{ok:true,msg:`商队又卸下一批货（花费 ${cost} 灵石，今日还可补货 ${SHOP_REFRESH_DAILY - used - 1} 次）`};
 }
 function buy(c,idx,day,rng){
 idx=Number(idx);
@@ -2811,7 +2854,7 @@ return{ok:true,msg:`买下 ${d.name}，花费 ${price} 灵石`};
 
 // ---- lib/game/auction.js
 const AUCTION_HOURS=24;
-const MAX_ACTIVE=3;
+const MAX_ACTIVE=5;
 const FEE=0.05;
 function bidsFor(shared,aid){
 return byPrefix(shared,`bid:${aid}:`).map((e)=>e.value).filter((b)=>b&&typeof b.amt==="number");
@@ -2872,12 +2915,14 @@ if(countOf(c,id)<n)return{err:"数量不足"};
 return{payload:{k:d.k,id,name:d.name,n,t:d.t},take:()=>removeItems(c,[[id,n]])};
 }
 function createAuction(c,shared,now,item,min,effects){
-if(!sharedRoomFor(shared,null))return{ok:false,msg:"坊市文书已满，天机阁正在清理旧卷，请稍后再上拍"};
+if(!sharedRoomFor(shared,`auction:${c.uid}:${(c.aucN ?? 0) + 1}`))return{ok:false,msg:"坊市文书已满，天机阁正在清理旧卷，请稍后再上拍"};
 min=Math.floor(Number(min)||0);
 if(min<1||min>10_000_000)return{ok:false,msg:"起拍价无效"};
 if(c.r<1)return{ok:false,msg:"筑基后方可上拍"};
-const mine=byPrefix(shared,`auction:${c.uid}:`).filter((e)=>e.value&&now<e.value.end+3*DAY);
-if(mine.length>=MAX_ACTIVE)return{ok:false,msg:`最多同时 ${MAX_ACTIVE} 件在拍（含待领取）`};
+
+
+const mine=byPrefix(shared,`auction:${c.uid}:`).filter((e)=>e.value&&!c.aucDone?.[e.value.aid]);
+if(mine.length>=MAX_ACTIVE)return{ok:false,msg:`最多同时 ${MAX_ACTIVE} 件在拍。先去坊市把已落槌的收了，位子就空出来`};
 const{payload,take,err}=itemPayload(c,item??{});
 if(err)return{ok:false,msg:err};
 const fee=subOf(c.sub)?.mods?.fee??FEE;
@@ -3720,6 +3765,87 @@ effects.push({type:"points.award",amount:reward.energy,reason:`问道：第${rew
 return{amount:reward.energy};
 }
 
+// ---- lib/game/gift.js
+const GIFTS=[
+{
+key:"v34",
+title:"天机阁赔罪",
+
+
+before:Date.UTC(2026,7,26),
+
+ls:(r)=>50000+15000*r,
+wu:5,
+items:[["t_bilei",5],["p_dingxin",5],["p_huixue",10],["p_huiling",10],["p_bigu",5]],
+mats:3, 
+matN:5,
+heal:true,
+},
+];
+
+function claimGift(c,legacy,now){
+legacy.gifts=legacy.gifts??{};
+const born=c.created??c.born??0;
+const g=GIFTS.find((x)=>!legacy.gifts[x.key]&&(!x.before||born<x.before));
+if(!g)return null;
+legacy.gifts[g.key]=now;
+const lines=[];
+const ls=typeof g.ls==="function"?g.ls(c.r):g.ls??0;
+if(ls){c.ls+=ls;lines.push(`灵石 +${ls}`);}
+if(g.wu){c.wu=(c.wu??0)+g.wu;lines.push(`悟性 +${g.wu}`);}
+for(const[id,n]of g.items??[])if(addStack(c,id,n))lines.push(`${ITEMS.find((i) => i.id === id)?.name ?? id} ×${n}`);
+if(g.mats){
+const t=Math.min(5,TIER_OF_REALM[Math.max(0,Math.min(8,c.r|0))]);
+const pool=ITEMS.filter((i)=>i.k==="mat"&&i.t<=t&&i.t>=Math.max(0,t-1));
+const rng=makeRng(`gift:${g.key}:${c.uid}`);
+const picked=new Set();
+for(let i=0;i<g.mats&&pool.length;i++){
+const m=rng.pick(pool);
+if(picked.has(m.id))continue;
+picked.add(m.id);
+if(addStack(c,m.id,g.matN??3))lines.push(`${m.name} ×${g.matN ?? 3}`);
+}
+}
+if(g.heal){
+c.hpP=1;c.mpP=1;c.tox=0;c.dbf={};
+c.st=Math.max(c.st??0,10);
+lines.push("气血灵力尽复，丹毒清空，伤势与走火入魔一并抹去");
+}
+return{key:g.key,title:g.title,lines,ls,wu:g.wu??0};
+}
+
+// ---- lib/game/energy.js
+const ENERGY_DAILY=5; 
+
+
+const lsPerEnergy=(r)=>5000+5000*Math.max(0,r|0);
+function energyView(c,balance){
+const used=c.daily.energy??0;
+return{
+balance:Math.max(0,balance|0),
+left:Math.max(0,ENERGY_DAILY-used),
+rate:lsPerEnergy(c.r),
+daily:ENERGY_DAILY,
+};
+}
+
+function offerEnergy(c,balance,n){
+n=Math.max(1,Math.floor(Number(n)||0));
+const used=c.daily.energy??0;
+if(used>=ENERGY_DAILY)return{ok:false,msg:`今日供奉已满 ${ENERGY_DAILY} 点能量，明日再来`};
+if(n>ENERGY_DAILY-used)return{ok:false,msg:`今日最多还能供奉 ${ENERGY_DAILY - used} 点能量`};
+if((balance|0)<n)return{ok:false,msg:`你只有 ${Math.max(0, balance | 0)} 点能量`};
+const rate=lsPerEnergy(c.r);
+const ls=rate*n;
+c.ls+=ls;
+c.daily.energy=used+n;
+return{
+ok:true,
+msg:`供奉 ${n} 点能量，天机阁回赠灵石 +${ls}`,
+effect:{type:"points.award",amount:-n,reason:`问道：供奉 ${n} 点能量换取灵石`},
+};
+}
+
 // ---- lib/game/wuxing.js
 const WX_MOVES=20;
 
@@ -4032,9 +4158,10 @@ url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='760'
 #tabs .ind.stamp b{animation:wdstamp .3s cubic-bezier(.2,1.6,.4,1)}
 @keyframes wdstamp{0%{transform:scale(1.4);opacity:.35}60%{transform:scale(.93);opacity:1}100%{transform:scale(1)}}
 /* ---- toasts */
-#toasts{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:20;display:flex;flex-direction:column;gap:6px;pointer-events:none;width:min(92vw,520px)}
+#toasts{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:6px;pointer-events:none;width:min(92vw,520px)}
 #toasts .t{background:rgba(11,18,32,.96);border:1px solid var(--line);color:var(--gold2);padding:9px 14px;border-radius:3px;font-size:13px;animation:wdfade 3.6s forwards;box-shadow:0 6px 20px rgba(0,0,0,.5)}
 #toasts .t.bad{border-color:rgba(158,63,63,.7);color:#f2b0a4}
+.ferr{color:#f2b0a4;font-size:13px;min-height:18px;margin:4px 0}
 @keyframes wdfade{0%{opacity:0;transform:translateY(6px)}8%{opacity:1;transform:none}85%{opacity:1}100%{opacity:0}}
 /* ---- ink wipe between screens */
 #wd .ink{position:fixed;inset:0;z-index:24;pointer-events:none;animation:wdink .42s ease-out forwards;background:radial-gradient(circle at 50% 40%,rgba(7,11,22,0) 0,rgba(7,11,22,.55) 34%,rgba(7,11,22,.96) 62%,rgba(7,11,22,.99) 100%)}
@@ -4265,6 +4392,12 @@ var cs=app.querySelectorAll?app.querySelectorAll('.card'):[];for(var j=0;j<cs.le
 var TIERN=['凡品','黄阶','玄阶','地阶','天阶','仙阶'];
 var TIERH=['#c3cbd8','#d3dc9a','#a6d5e2','#d6bff2','#f6ecd0','#ffd8a8'];
 // 3-stage reward reveal: tier streak, light pillar, card flip. Tap to skip; off under reduced motion.
+function giftCard(){var g=S.gift;if(!g)return;S.gift=null;var ov=$('overlay');if(!ov||!ov.classList.contains('hidden'))return;
+ov.classList.remove('hidden');
+clear(ov).appendChild(h('div',{class:'panel scr'},[h('div',{class:'burn'}),h('div',{class:'bloom'}),h('h2',{text:g.title}),
+h('div',{class:'muted',style:'margin:6px 0',text:'这一版修好了拍卖行点了没反应、渡劫堆气血白堆、突破罚得过重、坊市种子不够几处毛病。给道友赔个不是——'}),
+h('div',{class:'gains'},g.lines.map(function(x,i){return h('span',{style:'--i:'+i,text:x})})),
+h('div',{class:'row',style:'margin-top:12px'},[h('button',{class:'pri',onclick:function(){ov.classList.add('hidden')}},'谢过')])]))}
 function reveal(list,after){var ovv=$('overlay');if(!list||!list.length||rm()||(ovv&&!ovv.classList.contains('hidden'))){if(after)after();return}
 var it=list[0];var t=it.t!==null&&it.t!==undefined?(it.t|0):(it.q?Math.min(4,it.q|0):2);
 var box=h('div',{class:'rvl',style:'--rc:'+(TIERH[t]||'#F3E2B3')});
@@ -4293,10 +4426,11 @@ var SLOTN={w:'武器',a:'护甲',r:'饰品'};
 var TIERC=['t0','t1','t2','t3','t4','t5'];
 function rootLabel(r){return r?ROOTN[r.t]+'（'+r.e.join('')+'）':''}
 
-async function rpc(method,params,opts){opts=opts||{};if(S.busy&&!opts.force){return null}S.busy=true;var n=S.nav||0;var btns=D.querySelectorAll('#wd button');try{var raw=await W.community.call(method,params||{});var v=unwrap(raw);if(!v||typeof v!=='object'){toast('未收到回应',true);S._raw=raw;return null}
+async function rpc(method,params,opts){opts=opts||{};if(S.busy&&!opts.force){toast('上一道法诀尚未收势，请稍候',true);return null}S.busy=true;var n=S.nav||0;var btns=D.querySelectorAll('#wd button');try{var raw=await W.community.call(method,params||{});var v=unwrap(raw);if(!v||typeof v!=='object'){toast('未收到回应',true);S._raw=raw;return null}
 if(v.__v===undefined){S._raw=raw}
 if(v.me)S.me=v.me;if(v.world)S.world=v.world;if(v.guest)S.guest=true;if(v.need)S.need=v.need;else if(v.me)S.need=null;if(v.legacy)S.legacy=v.legacy;
-if(v.notes&&v.notes.length){S.notes=v.notes.concat(S.notes).slice(0,30);v.notes.forEach(function(n){toast(n.v)})}
+if(v.notes&&v.notes.length){S.notes=v.notes.concat(S.notes).slice(0,30);v.notes.forEach(function(n){if(n.k!=='gift')toast(n.v)})}
+if(v.gift)S.gift=v.gift;
 if(v.msg&&!opts.quiet)toast(v.msg,v.ok===false);
 if(v.err)console.warn('wendao',v.err);
 if(n!==(S.nav||0))return null;
@@ -4350,7 +4484,7 @@ var bars=h('div',{class:'bars'},[h('div',{class:'row sb'},[h('span',{class:'name
 top.appendChild(h('div',{class:'row',style:'gap:12px;align-items:center;flex-wrap:nowrap'},[seal,bars]));
 }
 
-function go(tab){S.tab=tab;S.nav=(S.nav||0)+1;renderTabs();ink();try{W.scrollTo(0,0);D.documentElement.scrollTop=0;D.body.scrollTop=0;var wd0=$('wd');if(wd0)wd0.scrollTop=0}catch(e){}var app=clear($('app'));app.appendChild(h('div',{class:'center muted',text:'…'}));if(S.busy){S.pend=tab;return}VIEWS[tab]()}
+function go(tab){S.tab=tab;S.nav=(S.nav||0)+1;renderTabs();ink();try{W.scrollTo(0,0);D.documentElement.scrollTop=0;D.body.scrollTop=0;var wd0=$('wd');if(wd0)wd0.scrollTop=0}catch(e){}var app=clear($('app'));app.appendChild(h('div',{class:'center muted',text:'…'}));if(S.busy){S.pend=tab;return}VIEWS[tab]();if(S.gift&&tab==='home')setTimeout(giftCard,60)}
 function screen(kids){var app=clear($('app'));add(app,kids);deco(app);return app}
 
 // ---------- boot
@@ -4421,7 +4555,7 @@ var meter=h('div',{},[h('div',{class:'bar hp'},[hpI]),h('div',{class:'bar mp'},[
 var stat=h('div',{class:'muted'});var tip=h('div',{class:'tip'});var msgB=h('div',{class:'ev'});
 var info=h('div',{},[hTitle,meter,stat,tip,msgB]);
 var btns=h('div',{class:'row',style:'margin-top:10px'});var log=h('div',{class:'log'});
-var panel=h('div',{class:'panel'},[cv,info,btns,h('div',{class:'muted',style:'margin:6px 0',text:'每一道劫雷由服务端按天命裁决；你只能选择如何应对。最后一道是心魔，靠悟性。'}),log]);
+var panel=h('div',{class:'panel'},[cv,info,btns,h('div',{class:'muted',style:'margin:6px 0',text:'按钮上的百分比＝这一道雷预计削掉你多少气血（已计入你的气血、法宝、道途与减免），闪避标的是成功率。气血越厚扣得越少。最后一道是心魔，靠悟性硬扛。'}),log]);
 var tribFrame=0,tribTimer=null,lastStrike=null,lastAt=0,tribCalm=false,amp=0,flash=0;
 function draw(strike,calm){if(strike){lastStrike=strike;lastAt=Date.now()}if(calm)tribCalm=true;if(!strike&&Date.now()-lastAt<520)strike=lastStrike;calm=calm||tribCalm;var g=cv.getContext&&cv.getContext('2d');if(!g)return;var f=tribFrame++;
 var sky=g.createLinearGradient(0,0,0,220);sky.addColorStop(0,calm?'#0B0F1A':'#05070d');sky.addColorStop(.6,calm?'#1b2a3c':'#0e1420');sky.addColorStop(1,calm?'#3a3f4a':'#171c28');g.fillStyle=sky;g.fillRect(0,0,560,220);
@@ -4455,7 +4589,9 @@ if(done){draw(null,true);
 if(win===false){quake();if(!info.querySelector('.crk'))info.insertBefore(h('div',{class:'crk',text:'渡劫'+String.fromCharCode(10)+'失败'}),msgB)}
 else{flash=1;if(!rm()){var bl=h('div',{class:'bloom'});ov.appendChild(bl);setTimeout(function(){if(bl.parentNode)bl.parentNode.removeChild(bl)},1700)}}
 btns.appendChild(h('button',{class:'pri',onclick:function(){stopTrib();ov.classList.add('hidden');go('home')}},'天地归于平静'))}
-else{TACT.forEach(function(a){var ok=t.can[a[0]]!==false&&(a[0]!=='artifact'||t.can.artifact)&&(a[0]!=='talisman'||t.can.talisman)&&(a[0]!=='pill'||t.can.pill);btns.appendChild(h('button',{disabled:!ok,title:a[2],onclick:async function(){var r=await rpc('trib.step',{act:a[0]},{quiet:true});if(!r)return;draw(t.bolts[t.bolts.length-1].k);quake();var fin=!(r.data&&r.data.home&&r.data.home.trib);var TL=(r.data&&r.data.tribLog)||r.log;if(fin&&TL&&TL.length){var L=TL[TL.length-1];log.insertBefore(h('div',{class:'A',text:'第'+(L.i+1)+'道'+L.k+'劫：'+(L.note||'')+'，伤 '+L.d}),log.firstChild)}log.insertBefore(h('div',{class:r.success===false?'B':'A'+(fin?' big':''),text:r.msg}),log.firstChild);if(r.data&&r.data.home&&r.data.home.trib)render(r.data.home.trib,false);else render(null,true,r.msg,r.success!==false)}},a[1]))});
+else{var FC=t.forecast||{};TACT.forEach(function(a){var ok=t.can[a[0]]!==false&&(a[0]!=='artifact'||t.can.artifact)&&(a[0]!=='talisman'||t.can.talisman)&&(a[0]!=='pill'||t.can.pill);
+var lb=a[1];if(ok){if(a[0]==='dodge'&&FC.dodge!=null)lb+=' 闪 '+FC.dodge+'%';else if(a[0]==='talisman')lb+=' 免伤';else if(a[0]==='pill')lb+=' 回四成';else if(FC[a[0]]!=null)lb+=' −'+FC[a[0]]+'%'}
+btns.appendChild(h('button',{disabled:!ok,title:a[2],onclick:async function(){var r=await rpc('trib.step',{act:a[0]},{quiet:true});if(!r)return;draw(t.bolts[t.bolts.length-1].k);quake();var fin=!(r.data&&r.data.home&&r.data.home.trib);var TL=(r.data&&r.data.tribLog)||r.log;if(fin&&TL&&TL.length){var L=TL[TL.length-1];log.insertBefore(h('div',{class:'A',text:'第'+(L.i+1)+'道'+L.k+'劫：'+(L.note||'')+'，伤 '+L.d}),log.firstChild)}log.insertBefore(h('div',{class:r.success===false?'B':'A'+(fin?' big':''),text:r.msg}),log.firstChild);if(r.data&&r.data.home&&r.data.home.trib)render(r.data.home.trib,false);else render(null,true,r.msg,r.success!==false)}},lb))});
 btns.appendChild(h('button',{class:'danger',onclick:async function(){if(!(await sure('临劫而逃，天劫会追着你劈三天。确定？')))return;await rpc('trib.flee');stopTrib();ov.classList.add('hidden');go('home')}},'逃'))}}
 clear(ov).appendChild(panel);draw();render(t,false)}
 
@@ -4464,11 +4600,11 @@ function replay(b,after){if(!b){if(after)after();return}var ov=$('overlay');ov.c
 var meKey='seal_'+(b.me.r!=null?b.me.r:(S.me?S.me.r:0));var foeKey=b.foe.id?'mon_'+b.foe.id:(b.foe.r!=null?'seal_'+b.foe.r:null);
 function fighter(name,key,fb,bar,side){return h('div',{class:'fighter '+side},[h('div',{class:'pfw'},[portrait(key,fb,'pf')]),h('div',{class:'fn',text:name}),h('div',{class:'bar hp'},[bar])])}
 var fA=fighter(b.me.name,meKey,b.me.name,barA,'L'),fB=fighter(b.foe.name,foeKey,b.foe.icon||b.foe.name,barB,'R');var turn=h('div',{class:'vs',text:'对'});
-var skip=h('button',{onclick:function(){i=b.log.length;finish()}},'跳过');
+var skip=h('button',{title:'胜负在出手那一刻就已判定，跳过只是略过演示',onclick:function(){i=b.log.length;finish()}},'跳过演示');
 function finish(){clear(log);b.log.forEach(function(e){log.appendChild(line(e))});var last=b.log[b.log.length-1];barA.style.width=pct(last.ah,ah)+'%';barB.style.width=pct(last.bh,bh)+'%';turn.textContent=b.win?'胜':'败';turn.className='vs '+(b.win?'win':'lose');(b.win?fB:fA).classList.add('down');clear(ctl).appendChild(h('button',{class:'pri',onclick:function(){ov.classList.add('hidden');if(after)after()}},b.win?'胜':'败'))}
 function line(e){var who=(e.s==='胜'||e.s==='败')?b.me.name:e.w==='A'?b.me.name:e.w==='B'?b.foe.name:'';var t=(e.t?'['+e.t+'] ':'')+who+(e.s?' · '+e.s:'')+(e.d?'  -'+fmt(e.d):'')+(e.c?' 暴击':'')+(e.e?'  '+e.e:'');return h('div',{class:e.w+(e.c||e.s==='胜'||e.s==='败'?' big':''),text:t})}
 function hit(e){if(!e.w)return;var atk=e.w==='A'?fA:fB,tgt=e.w==='A'?fB:fA;atk.classList.remove('atk');void atk.offsetWidth;atk.classList.add('atk');if(e.d){tgt.classList.remove('hit');void tgt.offsetWidth;tgt.classList.add('hit');var dn=h('span',{class:'dmg'+(e.c?' crit':''),text:'-'+fmt(e.d)});tgt.appendChild(dn);setTimeout(function(){if(dn.parentNode)dn.parentNode.removeChild(dn)},900)}if(e.t)turn.textContent=String(e.t)}
-var ctl=h('div',{class:'row',style:'margin-top:8px'},[skip]);
+var ctl=h('div',{class:'row',style:'margin-top:8px'},[skip,h('span',{class:'tip',text:'胜负在出手那一刻已由服务端判定，跳过只是略过演示，不影响结果。'})]);
 clear(ov).appendChild(h('div',{class:'panel'},[title,h('div',{class:'arena'},[fA,turn,fB]),log,ctl]));
 var tm=setInterval(function(){if(i>=b.log.length){clearInterval(tm);finish();return}var e=b.log[i++];log.insertBefore(line(e),log.firstChild);hit(e);barA.style.width=pct(e.ah,ah)+'%';barB.style.width=pct(e.bh,bh)+'%'},420)}
 
@@ -4528,13 +4664,39 @@ VIEWS.bag=async function(){var v=await rpc('bag',{},{quiet:true});if(!v)return;r
 function renderBag(d,sub){var inv=d.inv,sk=d.skills;var m=S.me;var tabs=h('div',{class:'row'},[['items','物品'],['arts','法宝'],['skills','功法神通'],['craft','炼制'],['pet','灵兽']].map(function(t){return h('button',{class:sub===t[0]?'pri sm':'sm',onclick:async function(){if(t[0]==='craft'){var x=await rpc('recipes',{},{quiet:true});if(x)renderBag(Object.assign({},d,x.data),'craft')}else if(t[0]==='pet'){var y=await rpc('pet',{},{quiet:true});if(y)renderBag(Object.assign({},d,y.data),'pet')}else renderBag(d,t[0])}},t[1])}));
 var body;
 if(sub==='items'){var groups={};inv.stack.forEach(function(it){(groups[it.k]=groups[it.k]||[]).push(it)});body=h('div',{},Object.keys(groups).map(function(k){return h('div',{},[h('h4',{text:KINDN[k]||k}),h('div',{class:'grid'},groups[k].map(function(it){var fx=it.fx||{};var usable=it.k==='pill'||it.k==='egg'||(it.k==='misc'&&(fx.array||fx.legacy));var goTo=fx.seed?['去播种',function(){go('home')}]:fx.rune?['去淬炼',function(){renderBag(d,'arts')}]:null;return h('div',{class:'item '+tcl(it.t)+(A['item_'+it.id]?' ic':'')},[rimEl(it.t),img('item_'+it.id),h('div',{class:'n'},[tierTag(it.t),it.name+' ×'+it.n]),h('div',{class:'muted',text:it.desc}),h('div',{class:'row',style:'margin-top:6px'},[usable?h('button',{class:'sm pri',onclick:async function(){var x=await rpc('use',{id:it.id});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'items')}},'使用'):null,goTo?h('button',{class:'sm pri',onclick:goTo[1]},goTo[0]):null,h('button',{class:'sm',onclick:async function(){var n=await ask('卖出给坊市（折半价，立刻到手）　单价 '+Math.floor(it.v*0.5)+' 灵石　数量',String(it.n),{type:'number'});if(!n)return;var x=await rpc('sell',{id:it.id,n:Number(n)});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'items')}},'卖出'),m.r>=1?h('button',{class:'sm',onclick:function(){auctionForm({id:it.id,max:it.n,name:it.name})}},'上拍'):null])])}))])}).concat([h('div',{class:'muted',text:'行囊 '+inv.stack.length+'/'+inv.cap.stack+' 种　·　卖出＝折半价卖给坊市，立刻到手；上拍＝挂拍卖行 24 小时，价高者得（手续费 5%）'})]))}
-else if(sub==='arts'){body=h('div',{},[h('div',{class:'muted',text:'已装备：'+['w','a','r'].map(function(s){var it=inv.arts.filter(function(a){return a.iid===inv.eq[s]})[0];return SLOTN[s]+' '+(it?it.name:'—')}).join(' · ')}),h('div',{class:'grid',style:'margin-top:8px'},inv.arts.map(function(a){return h('div',{class:'item '+tcl(a.t)+(a.equipped?' on':'')+(A['item_'+a.id]?' ic':'')},[rimEl(a.t),img('item_'+a.id),h('div',{class:'n'},[h('span',{class:'tag '+tcl(a.t),text:SLOTN[a.slot]}),a.name+' ',h('span',{class:'stars',text:'★★★★★'.slice(0,a.q)})]),h('div',{class:'muted'},[elSpan(a.elem),Object.keys(a.st||{}).map(function(k){return (STN[k]||k)+' +'+(a.st[k]<1?Math.round(a.st[k]*100)+'%':a.st[k])}).join(' ')+(a.q>1?'　★'+a.q+' 品质 +'+Math.round(((a.qm||1)-1)*100)+'%':'')]),a.af&&a.af.length?h('div',{class:'muted',text:a.af.map(function(f){return f.n+' +'+(f.v<1?Math.round(f.v*100)+'%':f.v)}).join('、')}):null,a.rn&&a.rn.length?h('div',{class:'muted',text:'符纹：'+a.rn.map(function(f){return STN[f.st]+' +'+(f.v<1?Math.round(f.v*100)+'%':f.v)}).join('、')}):null,h('div',{class:'row',style:'margin-top:6px'},[a.equipped?h('button',{class:'sm',onclick:async function(){var x=await rpc('unequip',{slot:a.slot});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'arts')}},'卸下'):h('button',{class:'sm pri',onclick:async function(){var x=await rpc('equip',{iid:a.iid});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'arts')}},'祭炼'),h('button',{class:'sm',onclick:async function(){if(!(await sure('把「'+a.name+'」折半卖给坊市，得 '+sellV(a)+' 灵石？想卖高价请改用「上拍」。')))return;var x=await rpc('sellArt',{iid:a.iid});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'arts')}},'卖出'),h('button',{class:'sm',onclick:function(){refineOpen(a.iid,d)}},'淬炼'),!a.equipped&&m.r>=1?h('button',{class:'sm',onclick:function(){auctionForm({iid:a.iid,name:a.name})}},'上拍'):null])])})),h('div',{class:'muted',text:'法宝匣 '+inv.arts.length+'/'+inv.cap.arts+'　·　卖出＝折半价卖给坊市，立刻到手；上拍＝挂拍卖行 24 小时，价高者得（手续费 5%）'})])}
+else if(sub==='arts'){body=h('div',{},[h('div',{class:'muted',text:'已装备：'+['w','a','r'].map(function(s){var it=inv.arts.filter(function(a){return a.iid===inv.eq[s]})[0];return SLOTN[s]+' '+(it?it.name:'—')}).join(' · ')}),h('div',{class:'grid',style:'margin-top:8px'},inv.arts.map(function(a){return h('div',{class:'item '+tcl(a.t)+(a.equipped?' on':'')+(A['item_'+a.id]?' ic':'')},[rimEl(a.t),img('item_'+a.id),h('div',{class:'n'},[h('span',{class:'tag '+tcl(a.t),text:SLOTN[a.slot]}),a.name+' ',h('span',{class:'stars',text:'★★★★★'.slice(0,a.q)})]),h('div',{class:'muted'},[elSpan(a.elem),Object.keys(a.st||{}).map(function(k){return (STN[k]||k)+' +'+(a.st[k]<1?Math.round(a.st[k]*100)+'%':a.st[k])}).join(' ')+(a.q>1?'　★'+a.q+' 品质 +'+Math.round(((a.qm||1)-1)*100)+'%':'')]),a.af&&a.af.length?h('div',{class:'muted',text:a.af.map(function(f){return f.n+' +'+(f.v<1?Math.round(f.v*100)+'%':f.v)}).join('、')}):null,a.rn&&a.rn.length?h('div',{class:'muted',text:'符纹：'+a.rn.map(function(f){return STN[f.st]+' +'+(f.v<1?Math.round(f.v*100)+'%':f.v)}).join('、')}):null,h('div',{class:'row',style:'margin-top:6px'},[a.equipped?h('button',{class:'sm',onclick:async function(){var x=await rpc('unequip',{slot:a.slot});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'arts')}},'卸下'):h('button',{class:'sm pri',onclick:async function(){var x=await rpc('equip',{iid:a.iid});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'arts')}},'装备'),h('button',{class:'sm',onclick:async function(){if(!(await sure('把「'+a.name+'」折半卖给坊市，得 '+sellV(a)+' 灵石？想卖高价请改用「上拍」。')))return;var x=await rpc('sellArt',{iid:a.iid});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'arts')}},'卖出'),h('button',{class:'sm',onclick:function(){refineOpen(a.iid,d)}},'淬炼'),!a.equipped&&m.r>=1?h('button',{class:'sm',onclick:function(){auctionForm({iid:a.iid,name:a.name})}},'上拍'):null])])})),h('div',{class:'muted',text:'法宝匣 '+inv.arts.length+'/'+inv.cap.arts+'　·　卖出＝折半价卖给坊市，立刻到手；上拍＝挂拍卖行 24 小时，价高者得（手续费 5%）'})])}
 else if(sub==='skills'){var sel=sk.eqArts.slice();body=h('div',{},[h('h4',{text:'功法（被动，择一修炼）'}),h('div',{class:'grid'},sk.gongfa.map(function(g){return h('div',{class:'item'+(g.equipped?' on':'')+(g.locked?' lock':''),onclick:async function(){if(g.locked||g.equipped)return;var x=await rpc('gongfa',{id:g.id});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'skills')}},[h('div',{class:'n',text:'《'+g.name+'》'+['黄','玄','地','天'][g.grade]+'阶'}),h('div',{class:'muted'},[elSpan(g.elem),'修炼 ×'+g.rate+' — '+g.desc])])})),h('h4',{text:'神通（出战 1-3 个，点击切换）'}),h('div',{class:'grid'},sk.arts.map(function(a){var on=sel.indexOf(a.id)>=0;var el=h('div',{class:'item'+(on?' on':'')+(a.locked?' lock':''),onclick:async function(){if(a.locked)return;var i=sel.indexOf(a.id);if(i>=0){if(sel.length<=1)return;sel.splice(i,1)}else{if(sel.length>=3){toast('最多三个',true);return}sel.push(a.id)}var x=await rpc('arts',{ids:sel});if(x&&x.ok)renderBag(Object.assign({},d,x.data),'skills')}},[h('div',{class:'n'},[elSpan(a.elem),a.name+' ×'+a.mult+' 耗'+a.mp]),h('div',{class:'muted',text:a.desc})]);return el}))])}
 else if(sub==='craft'){var rc=d.recipes||{pills:[],forge:[]};function rlist(list,title){return [h('h4',{text:title}),h('div',{class:'grid'},list.map(function(r){return h('div',{class:'item'+(r.can?'':' lock')+(A['item_'+r.out]?' ic':'')},[img('item_'+r.out),h('div',{class:'n',text:r.name+(r.n>1?' ×'+r.n:'')+'  '+Math.round(r.p*100)+'%'}),h('div',{class:'muted',text:r.in.map(function(i){return i.name+' '+i.have+'/'+i.n}).join('、')+' · '+r.ls+' 灵石'}),h('div',{class:'muted',text:r.desc}),h('button',{class:'sm pri',disabled:!r.can,style:'margin-top:6px',onclick:async function(){var x=await rpc('craft',{id:r.id});if(!x)return;var nd=Object.assign({},d,x.data);if(x.success)reveal([{id:r.out,name:r.name,n:r.n,t:tierIn(nd,r.out)}],function(){renderBag(nd,'craft')});else renderBag(nd,'craft')}},'开炉')])}))]}body=h('div',{},rlist(rc.pills,'炼丹（丹修 +25% 成功率，丹毒减半）').concat(rlist(rc.forge,'炼器 / 制符（器修 +25% 成功率与品质）')))}
 else if(sub==='pet'){body=petBody(d)}
 screen([hero('bag'),h('div',{class:'card'},[h('h3',{text:'行囊'}),h('div',{class:'row sb'},[h('span',{class:'sub',text:'随身之物'}),h('span',{class:'num',text:'◆ '+fmt(m.ls)+' 灵石'})]),tabs,body])])}
+function energyForm(e,d){var ov=$('overlay');ov.classList.remove('hidden');
+var n=h('input',{type:'number',value:'1',min:1,max:String(Math.max(1,Math.min(e.left,e.balance)))});
+var er=h('div',{class:'ferr'});var out=h('div',{class:'num',style:'margin:6px 0'});
+function calc(){var k=Math.max(0,Math.min(Number(n.value)||0,e.left,e.balance));out.textContent='换得灵石 ◆ '+fmt(k*e.rate)}
+n.oninput=calc;calc();
+var ob=h('button',{class:'pri'},'供奉');
+ob.onclick=async function(){if(ob.disabled)return;er.textContent='';var k=Number(n.value)||0;
+if(!(k>=1)){er.textContent='至少供奉 1 点能量';return}
+if(k>e.balance){er.textContent='你只有 '+e.balance+' 点能量';return}
+if(!(await sure('确定供奉 '+k+' 点论坛能量，换 '+(k*e.rate)+' 灵石？扣的是论坛上真实的能量，换完不可退。')))return;
+ob.disabled=true;ob.textContent='供奉中…';
+try{var x=await rpc('energy.offer',{n:k},{force:true});
+if(x&&x.ok){ov.classList.add('hidden');go('market');return}
+er.textContent=x&&x.msg?x.msg:'供奉未成，能量与灵石都没有变动'}finally{ob.disabled=false;ob.textContent='供奉'}};
+clear(ov).appendChild(h('div',{class:'panel scr'},[h('div',{class:'burn'}),h('h2',{text:'能量供奉'}),
+h('div',{class:'muted',text:'把论坛能量供入天机阁，换成灵石。1 点能量 ＝ '+fmt(e.rate)+' 灵石（随境界水涨船高），每日最多 '+e.daily+' 点。'}),
+h('div',{class:'muted',style:'margin:6px 0',text:'你现有论坛能量 '+e.balance+' 点，今日还可供奉 '+e.left+' 点。'}),
+h('div',{style:'margin:8px 0'},['供奉 ',n,' 点']),out,er,
+h('div',{class:'row'},[ob,h('button',{onclick:function(){ov.classList.add('hidden')}},'算了')])]))}
 function auctionForm(it){var ov=$('overlay');ov.classList.remove('hidden');var n=h('input',{type:'number',value:it.max?String(Math.min(it.max,1)):'1',min:1,max:it.max||1});var min=h('input',{type:'number',placeholder:'起拍价（灵石）',min:1});
-clear(ov).appendChild(h('div',{class:'panel scr'},[h('div',{class:'burn'}),h('h2',{text:'上拍 '+it.name}),it.max?h('div',{style:'margin:6px 0'},['数量 ',n]):null,h('div',{style:'margin:8px 0'},[min]),h('div',{class:'muted',text:'24 小时后落槌。手续费 5%（商人免）。最多同时三件。'}),h('div',{class:'row'},[h('button',{class:'pri',onclick:async function(){var item=it.iid?{iid:it.iid}:{id:it.id,n:Number(n.value)};var x=await rpc('auction.create',{item:item,min:Number(min.value)});if(x&&x.ok){ov.classList.add('hidden');go('market')}}},'上拍'),h('button',{onclick:function(){ov.classList.add('hidden')}},'取消')])]))}
+var er=h('div',{class:'ferr'});var ob=h('button',{class:'pri'},'上拍');
+ob.onclick=async function(){if(ob.disabled)return;er.textContent='';var mv=Number(min.value);
+if(!(mv>=1)){er.textContent='请先填起拍价（至少 1 灵石）';return}
+ob.disabled=true;ob.textContent='上拍中…';
+try{var item=it.iid?{iid:it.iid}:{id:it.id,n:Number(n.value)};var x=await rpc('auction.create',{item:item,min:mv},{force:true});
+if(x&&x.ok){ov.classList.add('hidden');go('market');return}
+er.textContent=x&&x.msg?x.msg:'没能上拍，请稍后再试'}finally{ob.disabled=false;ob.textContent='上拍'}};
+clear(ov).appendChild(h('div',{class:'panel scr'},[h('div',{class:'burn'}),h('h2',{text:'上拍 '+it.name}),it.max?h('div',{style:'margin:6px 0'},['数量 ',n]):null,h('div',{style:'margin:8px 0'},[min]),h('div',{class:'muted',text:'24 小时后落槌，价高者得。手续费 5%（商人免）。同时最多 5 件在拍（与 auction.js 的 MAX_ACTIVE 一致）；卖出的钱一领，位子当场空出来。'}),er,h('div',{class:'row'},[ob,h('button',{onclick:function(){ov.classList.add('hidden')}},'取消')])]))}
 
 // ---------- 淬炼 / 灵田 / 灵兽
 var RN=['炼气','筑基','金丹','元婴','化神','炼虚','合体','大乘','渡劫'];var RN10=RN.concat(['仙']);
@@ -4588,7 +4750,10 @@ return h('div',{},[head,trip,feed,evo,p.evoLv?h('div',{class:'muted',text:'化�
 
 // ---------- market
 VIEWS.market=async function(){var v=await rpc('shop',{},{quiet:true});if(!v)return;renderMarket(v.data)};
-function renderMarket(d){var m=S.me;var shop=h('div',{class:'card'},[h('h3',{text:'坊市'}),h('div',{class:'row sb'},[h('span',{class:'sub',text:'每日换货'}),h('span',{class:'num',text:'囊中 ◆ '+fmt(m.ls)})]),h('div',{class:'grid'},d.shop.map(function(s){return h('div',{class:'item '+tcl(s.t)+(s.left?'':' lock')+(A['item_'+s.id]?' ic':'')},[rimEl(s.t),img('item_'+s.id),h('div',{class:'n'},[h('span',{class:'tag '+tcl(s.t),text:KINDN[s.k]||s.k}),s.name]),h('div',{class:'muted',text:s.desc}),h('div',{class:'row sb',style:'margin-top:6px'},[h('span',{class:'num grow',text:'◆ '+s.price+' · 余 '+s.left}),h('button',{class:'sm pri',disabled:!s.left||m.ls<s.price,onclick:async function(){var x=await rpc('buy',{idx:s.idx});if(x&&x.ok)renderMarket(Object.assign({},d,x.data))}},'买')])])}))]);
+function renderMarket(d){var m=S.me;var re=d.shopRe||{left:0,cost:0};
+var reBtn=h('button',{class:'sm',disabled:!re.left||m.ls<re.cost,title:re.left?'换一批货，已买过的不会重复出现':'今日补货次数已用尽',onclick:async function(){var x=await rpc('shop.refresh');if(x&&x.ok)renderMarket(Object.assign({},d,x.data))}},re.left?'补货 ◆'+re.cost+'（余 '+re.left+' 次）':'今日已补满');
+var eBtn=h('button',{class:'sm',onclick:async function(){var x=await rpc('energy');if(x&&x.data&&x.data.energy)energyForm(x.data.energy,d)}},'能量供奉');
+var shop=h('div',{class:'card'},[h('h3',{text:'坊市'}),h('div',{class:'row sb'},[h('span',{class:'sub',text:'每日换货 · 商队每日可请三次'}),h('span',{class:'num',text:'囊中 ◆ '+fmt(m.ls)})]),h('div',{class:'row',style:'margin-bottom:6px'},[reBtn,eBtn]),h('div',{class:'grid'},d.shop.map(function(s){return h('div',{class:'item '+tcl(s.t)+(s.left?'':' lock')+(A['item_'+s.id]?' ic':'')},[rimEl(s.t),img('item_'+s.id),h('div',{class:'n'},[h('span',{class:'tag '+tcl(s.t),text:KINDN[s.k]||s.k}),s.name]),h('div',{class:'muted',text:s.desc}),h('div',{class:'row sb',style:'margin-top:6px'},[h('span',{class:'num grow',text:'◆ '+s.price+' · 余 '+s.left}),h('button',{class:'sm pri',disabled:!s.left||m.ls<s.price,onclick:async function(){var x=await rpc('buy',{idx:s.idx});if(x&&x.ok)renderMarket(Object.assign({},d,x.data))}},'买')])])}))]);
 var a=d.auctions||{open:[],mine:[],ended:[]};
 function itemName(it){return it.name+(it.n?'×'+it.n:'')+(it.q?'（'+it.q+'星）':'')+(it.rn?'（'+it.rn+'纹）':'')}
 function left(end){var s=Math.max(0,end-(S.me.now||Date.now()));return s>3600000?Math.round(s/3600000)+' 小时':Math.max(1,Math.round(s/60000))+' 分'}
@@ -5382,7 +5547,7 @@ for(const a of inv.arts.slice(0,15)){
 const stl=Object.keys(a.st??{}).map((k)=>`${k} +${a.st[k] < 1 ? Math.round(a.st[k] * 100) + "%" : a.st[k]}`).join(" ");
 const af=(a.af??[]).map((f)=>`${f.n} +${f.v < 1 ? Math.round(f.v * 100) + "%" : f.v}`).join("、");
 const rn=(a.rn??[]).map((f)=>`${STN[f.st] ?? f.st} +${f.v < 1 ? Math.round(f.v * 100) + "%" : f.v}`).join("、");
-out.push(V([T(`${SLOTN[a.slot]} · ${a.name} ${"★".repeat(a.q)}${a.equipped ? "（已祭炼）" : ""}`,{weight:"medium"}),muted(`${stl}${a.elem ? " · " + a.elem + "属性" : ""}${af ? " · " + af : ""}${rn ? " · 纹 " + rn : ""}`),H([a.equipped?B("卸下","do:unequip:"+a.slot):B("祭炼","do:equip:"+a.iid,{variant:"primary"}),B("淬炼","sub:ref_"+a.iid),B("卖出","do:sellArt:"+a.iid),!a.equipped&&me.r>=1?B("上拍","sub:auca_"+a.iid,{variant:"flat"}):null])],{gap:"xs"}));
+out.push(V([T(`${SLOTN[a.slot]} · ${a.name} ${"★".repeat(a.q)}${a.equipped ? "（已装备）" : ""}`,{weight:"medium"}),muted(`${stl}${a.elem ? " · " + a.elem + "属性" : ""}${af ? " · " + af : ""}${rn ? " · 纹 " + rn : ""}`),H([a.equipped?B("卸下","do:unequip:"+a.slot):B("装备","do:equip:"+a.iid,{variant:"primary"}),B("淬炼","sub:ref_"+a.iid),B("卖出","do:sellArt:"+a.iid),!a.equipped&&me.r>=1?B("上拍","sub:auca_"+a.iid,{variant:"flat"}):null])],{gap:"xs"}));
 }
 if(sub.startsWith("auca_")){const iid=sub.slice(5);const a=inv.arts.find((x)=>String(x.iid)===iid);if(a)out.push(h4(`上拍 ${a.name}`),H([I("min_a"+iid,"起拍价（灵石）"),B("确认上拍","do:auction.createArt:"+iid,{variant:"primary"}),B("取消","sub:arts")]));}
 }else if(sub.startsWith("ref_")){
@@ -7074,6 +7239,13 @@ checkAchievements(c,legacy,shared,notes,now);
 const fp=flushPending(legacy,now,effects);
 if(fp)legacy._dirty=true;
 if(fp){notes.push({k:"energy",v:`里程碑奖励：能量 +${fp.amount}`});legacy._dirty=true;}
+
+const gift=claimGift(c,legacy,now);
+if(gift){
+legacy._dirty=true;
+notes.push({k:"gift",v:`${gift.title}：${gift.lines.join("，")}`});
+}
+return gift;
 }
 
 const TUT_REWARD=30,TUT_BONUS=60;
@@ -7092,6 +7264,9 @@ const steps=tutSteps(c);
 for(const s of steps)if(s.done&&!s.paid){c.tut[s.k]=1;c.ls+=TUT_REWARD;notes.push({k:"tut",v:`初入仙途 · ${s.name}，灵石 +${TUT_REWARD}`});}
 if(steps.every((s)=>s.done)){c.tutDone=true;c.ls+=TUT_BONUS;notes.push({k:"tut",v:`初入仙途圆满，灵石 +${TUT_BONUS}。此后：筑基渡劫后择道途，金丹后可兼修副业、开宗立派。`});}
 }
+const shopReInfo=(c)=>({left:Math.max(0,SHOP_REFRESH_DAILY-(c.daily.shopRe??0)),cost:refreshCost(c)});
+
+const energyBalance=async(api)=>{try{return(await api.points.balance())|0;}catch{return 0;}};
 function homeView(c,shared,now){
 const st=deriveStats(c);
 const s=sectOf(shared,c.sect);
@@ -7112,7 +7287,7 @@ switch(tab){
 case "home":return{home:homeView(c,shared,now)};
 case "explore":return{regions:regionsView(c),event:eventView(c,deriveStats(c)),daily:EXPLORE_DAILY,...(sub==="dg"?{dg:dungeonView(c,shared,now)}:{})};
 case "bag":return{inv:inventoryView(c),skills:ART_VIEW(c),recipes:recipesView(c),...(sub==="pet"?{pet:petView(c,deriveStats(c),now)}:{}),...(String(sub??"").startsWith("ref_")?{refine:refineView(c,Number(String(sub).slice(4)))}:{})};
-case "market":return{shop:shopView(c,dayKey(now)),auctions:auctionsView(c,shared,now)};
+case "market":return{shop:shopView(c,dayKey(now)),auctions:auctionsView(c,shared,now),shopRe:shopReInfo(c)};
 case "arena":return{arena:{list:candidates(c,shared,now),left:ARENA_DAILY-c.daily.arena,refresh:3-(c.daily.arenaRefresh??0),season:c.season,standings:standings(shared,seasonOf(now).n).slice(0,10)},boss:{world:worldView(shared,now),board:bossBoard(shared,dayKey(now)).slice(0,10),left:BOSS_DAILY-c.daily.boss,mine:bossMine(shared,dayKey(now),c.uid)?.d??0},...(sub==="wx"?{wx:wuxingView(c,shared,now)}:{})};
 case "sect":return{sect:c.sect?sectView(c,shared,c.sect,now):null,list:sectList(shared).slice(0,15),cost:5000,sboss:c.sect?sectBossBoard(shared,c.sect,weekKey(now)):null};
 case "lb":return{};
@@ -7183,7 +7358,7 @@ return reply({ok:true,msg:"道号已定。",me:summary(c,now),data:{created:true
 return reply({ok:true,need:"create",legacy:{pts:legacy.pts??0,lives:legacy.lives??0,history:legacy.history??[]},world,data:leaderboards(null,shared,"realm")});
 }
 if(!c.sk)c.sk=secretKey(); 
-housekeeping(c,legacy,shared,now,effects,notes);
+const gift=housekeeping(c,legacy,shared,now,effects,notes);
 
 if(c.dead||c.ascended){
 if(method==="rebirth"){
@@ -7294,8 +7469,17 @@ break;
 case "recipes":data={recipes:recipesView(c),inv:inventoryView(c)};break;
 case "craft":res=craft(c,String(params.id??""),rng());data={recipes:recipesView(c),inv:inventoryView(c)};break;
 
-case "shop":data={shop:shopView(c,dayKey(now)),auctions:auctionsView(c,shared,now)};break;
+case "shop":data={shop:shopView(c,dayKey(now)),auctions:auctionsView(c,shared,now),shopRe:shopReInfo(c)};break;
 case "buy":res=buy(c,params.idx,dayKey(now),rng());data={shop:shopView(c,dayKey(now))};break;
+case "shop.refresh":res=shopRefresh(c);data={shop:shopView(c,dayKey(now)),auctions:auctionsView(c,shared,now),shopRe:shopReInfo(c)};break;
+case "energy":data={energy:energyView(c,await energyBalance(api))};break;
+case "energy.offer":{
+const bal=await energyBalance(api);
+res=offerEnergy(c,bal,params.n);
+if(res.effect)effects.push(res.effect); 
+data={energy:energyView(c,bal-(res.ok?Math.max(1,Math.floor(Number(params.n)||0)):0))};
+break;
+}
 case "auction.create":res=createAuction(c,shared,now,params.item,params.min,effects);data={auctions:auctionsView(c,shared,now),inv:inventoryView(c)};break;
 case "auction.bid":res=bid(c,shared,now,String(params.aid??""),params.amt,effects);data={auctions:auctionsView(c,shared,now)};break;
 case "auctions":data={auctions:auctionsView(c,shared,now)};break;
@@ -7400,6 +7584,7 @@ effects.push({type:"kv.set",key:"bio",value:bio});
 if(legacyDirty)effects.push({type:"kv.set",key:"legacy",value:legacy});
 syncProfile(c,shared,now,effects);
 const view={ok:res.ok!==false,msg:res.msg??null,me:summary(c,now),data,notes,world,method};
+if(gift)view.gift=gift; 
 if(res.success!==undefined)view.success=res.success;
 if(res.win!==undefined)view.win=res.win;
 if(res.p!==undefined)view.p=res.p;

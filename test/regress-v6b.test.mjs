@@ -190,17 +190,24 @@ test("拍卖行的响应大小不随全站在拍量增长——否则坊市与�
   assert.equal(s.shared.get("auction:100:1").item.rn.length, 2);
 });
 
-test("上拍三件都能成，第四件被干净地拒绝（不是通讯失败）", async () => {
+test("上拍五件都能成，第六件被干净地拒绝；领走货款后位子当场空出来", async () => {
+  const { MAX_ACTIVE } = await import("../lib/game/auction.js");
   const s = new Site();
   await s.call(10, "boot", {});
   await s.call(10, "create", { name: "拍卖生" });
-  s.setChar(10, (c) => { c.r = 2; c.ls = 100000; c.inv.stack.p_huixue = 5; c.inv.stack.p_huiling = 5; c.inv.stack.m_lingcao = 5; });
-  const ids = ["p_huixue", "p_huiling", "m_lingcao", "p_huixue"];
-  for (let i = 0; i < 4; i++) {
-    const r = await s.call(10, "auction.create", { item: { id: ids[i], n: 1 }, min: 100 });
-    assert.equal(r.ok, i < 3, `第 ${i + 1} 件：${r.msg}`);
-    if (i === 3) assert.match(r.msg, /最多同时 3 件/);
+  s.setChar(10, (c) => { c.r = 2; c.ls = 100000; c.inv.stack.p_huixue = 9; });
+  for (let i = 0; i < MAX_ACTIVE + 1; i++) {
+    const r = await s.call(10, "auction.create", { item: { id: "p_huixue", n: 1 }, min: 100 });
+    assert.equal(r.ok, i < MAX_ACTIVE, `第 ${i + 1} 件：${r.msg}`);
+    if (i === MAX_ACTIVE) assert.match(r.msg, /最多同时 5 件/);
   }
+  // 落槌 + bot 结算 + 卖家领取后，名额必须立刻回来（旧版要再等三天）
+  s.advance(25 * 3600_000);
+  await s.tick();
+  await s.call(10, "home");
+  assert.ok(Object.keys(s.char(10).aucDone ?? {}).length >= 1, "流拍的货已领回");
+  const again = await s.call(10, "auction.create", { item: { id: "p_huixue", n: 1 }, min: 100 });
+  assert.equal(again.ok, true, `领完就该能再上拍：${again.msg}`);
 });
 
 test("共享区闸门：日常到期先清，吃紧时闲置档案请出去，仙籍与掌门不动", async () => {
@@ -363,12 +370,38 @@ test("渡劫专长真的生效：体修硬抗少受 25%，法修招架少受 10%
     assert.equal(r.ok, true, r.msg);
     return 1 - s.char(uid).trib.log[0].hp; // 第一道雷吃掉的气血比例
   };
+  // v34 起雷伤按「同境界白板气血」落下、再除以你自己的气血，所以气血倍率也算进来：
+  // 体修少受的 = 硬抗专长 25% × 气血 1.5 倍。两项都要对得上，缺一项都是回归。
+  const { pathOf } = await import("../lib/data/paths.js");
+  const exp = (id, perk) => (1 - (pathOf(id).trib?.[perk] ?? 0)) / (pathOf(id).mods?.hp ?? 1);
   const base = await setup(71, "dan", "tank");
   const ti = await setup(72, "ti", "tank");
-  assert.ok(Math.abs(ti / base - 0.75) < 0.01, `体修硬抗应少受 25%，实际比例 ${(ti / base).toFixed(3)}`);
+  assert.ok(Math.abs(ti / base - exp("ti", "tank")) < 0.01, `体修硬抗比例应为 ${exp("ti", "tank").toFixed(3)}，实际 ${(ti / base).toFixed(3)}`);
   const baseP = await setup(73, "dan", "parry");
   const fa = await setup(74, "fa", "parry");
-  assert.ok(Math.abs(fa / baseP - 0.9) < 0.01, `法修招架应少受 10%，实际比例 ${(fa / baseP).toFixed(3)}`);
+  assert.ok(Math.abs(fa / baseP - exp("fa", "ward")) < 0.01, `法修招架比例应为 ${exp("fa", "ward").toFixed(3)}，实际 ${(fa / baseP).toFixed(3)}`);
+});
+
+test("渡劫：气血堆得越厚，雷劫掉的比例越小（旧版气血被约掉，堆血完全没用）", async () => {
+  const { stageNeed } = await import("../lib/data/realms.js");
+  const s = new Site();
+  const run = async (uid, bonusHp) => {
+    await s.call(uid, "boot", {});
+    await s.call(uid, "create", { name: "雷修" + uid });
+    s.setChar(uid, (c) => {
+      c.r = 0; c.s = 8; c.xp = stageNeed(0, 8); c.hpP = 1; c.mpP = 1; c.path = "dan";
+      if (bonusHp) { c.ic = 1; c.inv.arts = [{ iid: 1, id: "f_tiejian", q: 1, af: [{ st: "hp", v: bonusHp, n: "厚血" }] }]; c.eq = { ...c.eq, w: 1 }; }
+    });
+    const v = await s.call(uid, "trib.start");
+    assert.equal(v.ok, true, v.msg);
+    s.setChar(uid, (c) => { c.trib.seed = "pinned-hp-seed"; });
+    const r = await s.call(uid, "trib.step", { act: "tank" });
+    assert.equal(r.ok, true, r.msg);
+    return 1 - s.char(uid).trib.log[0].hp;
+  };
+  const thin = await run(81, 0);
+  const thick = await run(82, 400); // 一件加了大量气血的法宝
+  assert.ok(thick < thin * 0.9, `堆气血必须真的少掉血：白板 ${thin.toFixed(3)} vs 厚血 ${thick.toFixed(3)}`);
 });
 
 test("bot 一轮的 effects 决不超过平台 ~20 条的限额", async () => {

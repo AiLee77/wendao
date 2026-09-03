@@ -139,11 +139,11 @@ await step("游历 higher regions unlock with realm", async () => {
   await expect(/奇遇|遭遇/, "beiming event"); await shot("beiming");
   await frame.locator("#app button.opt:not([disabled])").first().click(); await sleep(2500); await closeOverlay();
 });
-await step("行囊: 使用/祭炼/功法神通/炼制", async () => {
+await step("行囊: 使用/装备/功法神通/炼制", async () => {
   await dev("dev.give", { ls: 3000, items: { p_huixue: 3, m_lingcao: 12, m_tiekuang: 12, x_jiecao: 3, t_huo: 2 }, arts: ["f_tiejian", "f_bupao"] });
   await reload(); await tab("行囊"); await shot("bag");
   await click("使用", "#app", 1200); await expect(/服下|气血/, "use pill");
-  await click("法宝", "#app"); await click("祭炼", "#app"); await expect(/已装备：武器 精铁剑|卸下/, "equip"); await shot("arts");
+  await click("法宝", "#app"); await click("装备", "#app"); await expect(/已装备：武器 精铁剑|卸下/, "equip"); await shot("arts");
   await click("功法神通", "#app"); await expect(/太玄吐纳诀/, "skills");
   await click("炼制", "#app"); await expect(/炼丹/, "recipes"); await click("开炉", "#app", 1500); await expect(/炼成|失败|开炉/, "craft"); await shot("craft");
 });

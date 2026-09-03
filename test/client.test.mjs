@@ -135,7 +135,8 @@ test("tribulation overlay walks every bolt from the client", async () => {
   assert.ok(!p.$("#overlay").classList.contains("hidden"));
   let guard = 0;
   while (guard++ < 20) {
-    const b = p.$$("#overlay button").find((x) => x.textContent === "招架" && !x.disabled);
+    // 按钮上现在还带着这道雷的预估伤害（「招架 −27%」），所以按前缀找
+    const b = p.$$("#overlay button").find((x) => x.textContent.indexOf("招架") === 0 && !x.disabled);
     if (!b) break;
     await p.click(b);
     await p.tick(40);
