@@ -4738,13 +4738,15 @@ function petBody(d){var pv=d.pet||{};var p=pv.pet;
 if(!p)return h('div',{},[h('div',{class:'muted',text:'尚无灵兽。行囊里的兽卵可以孵化——妖兽会掉，灵兽远行也会叼回来。'}),(pv.eggs&&pv.eggs.length)?h('div',{class:'row',style:'margin-top:8px'},pv.eggs.map(function(e){return h('button',{class:'pri sm',onclick:async function(){var x=await rpc('use',{id:e.id});if(x&&x.ok){var y=await rpc('pet',{},{quiet:true});if(y)renderBag(Object.assign({},d,y.data),'pet')}}},'孵化 '+e.name+'（'+e.pet+'）')})):null]);
 async function reload(){var y=await rpc('pet',{},{quiet:true});if(y)renderBag(Object.assign({},d,y.data),'pet')}
 var hpp=Math.round((p.hpP||0)*100);
-var head=h('div',{class:'encp'},[portrait('mon_'+(p.mon||''),p.name,'mon'),h('div',{class:'grow'},[h('div',{class:'n',text:p.name+'　'+p.lv+' 级'+['','　化形','　仙形'][p.ev||0]}),h('div',{class:'muted'},[elSpan(p.elem),'攻击 '+fmt(p.atk)+' · 气血 '+fmt(p.hp)]),h('div',{class:'bar hp'},[h('i',{style:'width:'+hpp+'%'})]),h('div',{class:'bar xp'},[h('i',{style:'width:'+pct(p.xp,p.need)+'%'})]),h('div',{class:'muted',text:'气血 '+hpp+'% · 历练 '+p.xp+'/'+p.need})])]);
+var head=h('div',{class:'encp'},[portrait('mon_'+(p.mon||''),p.name,'mon'),h('div',{class:'grow'},[h('div',{class:'n',text:p.name+'　'+p.lv+' 级'+['','　化形','　仙形'][p.ev||0]}),h('div',{class:'muted'},[elSpan(p.elem),'攻击 '+fmt(p.atk)+' · 气血 '+fmt(p.hp)]),h('div',{class:'bar hp'},[h('i',{style:'width:'+hpp+'%'})]),h('div',{class:'bar xp'},[h('i',{style:'width:'+(pv.maxed?100:pct(p.xp,p.need))+'%'})]),h('div',{class:'muted',text:'气血 '+hpp+'% · 历练 '+(pv.maxed?'圆满':p.xp+'/'+p.need)})])]);
 var trip;
 if(p.trip)trip=h('div',{},[h('h4',{text:'远行'}),h('div',{class:'row sb'},[h('span',{class:'grow',text:p.trip.regionName+' · '+(p.trip.ready?'已归来':'余 '+dur(p.trip.left))}),h('button',{class:'pri sm',disabled:!p.trip.ready,onclick:async function(){var x=await rpc('pet.collect',{},{quiet:true});if(!x)return;if(x.ok===false){toast(x.msg,true);return}toast(x.msg);reveal((x.data.drops||[]).filter(function(z){return !z.lost}),reload)}},'收取')])]);
 else{var sel=h('select');(pv.regions||[]).forEach(function(rg){if(rg.open)sel.appendChild(h('option',{value:rg.id},rg.icon+' '+rg.name))});
 trip=h('div',{},[h('h4',{text:'远行（今日余 '+pv.tripsLeft+' 次）'}),h('div',{class:'row'},[sel].concat((pv.hours||[4,8,12]).map(function(hh){return h('button',{class:'sm',disabled:pv.tripsLeft<=0||p.hpP<0.3,onclick:async function(){var x=await rpc('pet.send',{region:sel.value,hours:hh});if(x&&x.ok)reload()}},hh+' 小时')}))),h('div',{class:'muted',text:'远行期间不随你出战，气血不足三成不能远行。回来带材料，偶尔有兽卵或奇遇。'})])}
 var feed=h('div',{},[h('h4',{text:'喂养'}),(pv.feed&&pv.feed.length)?h('div',{class:'row'},pv.feed.map(function(fd){return h('button',{class:'sm',onclick:async function(){var x=await rpc('pet.feed',{item:fd.id});if(x&&x.ok)reload()}},fd.name+' +'+fd.xp)})):h('div',{class:'muted',text:pv.maxed?'它已至二十级，历练圆满，再喂无益。':'材料与含修为的丹药都能喂。'})]);
-var evo=h('div',{class:'row',style:'margin-top:8px'},[p.evoLv?h('button',{class:'pri sm',disabled:!p.canEvolve,onclick:async function(){if(!(await sure('让'+p.name+'化形？消耗 '+p.evoCost.map(function(z){return z.name+'×'+z.n}).join('、'))))return;var x=await rpc('pet.evolve',{});if(x&&x.ok)reload()}},'化形（'+p.evoLv+' 级）'):null,
+var lack=(p.evoCost||[]).filter(function(z){return z.have<z.n});
+var evoLb=p.canEvolve?'化形':(p.lv<p.evoLv?'化形（需 '+p.evoLv+' 级）':lack.length?'化形（缺 '+lack.map(function(z){return z.name+'×'+(z.n-z.have)}).join('、')+'）':'化形');
+var evo=h('div',{class:'row',style:'margin-top:8px'},[p.evoLv?h('button',{class:'pri sm',disabled:!p.canEvolve,onclick:async function(){if(!(await sure('让'+p.name+'化形？消耗 '+p.evoCost.map(function(z){return z.name+'×'+z.n}).join('、'))))return;var x=await rpc('pet.evolve',{});if(x&&x.ok)reload()}},evoLb):null,
 h('button',{class:'flat sm',onclick:async function(){var x=await rpc('pet.release',{},{quiet:true});if(!x)return;if(x.confirm){if(!(await sure(x.msg)))return;var y=await rpc('pet.release',{confirm:'1'});if(y&&y.ok)reload();return}toast(x.msg,x.ok===false)}},'放生')]);
 return h('div',{},[head,trip,feed,evo,p.evoLv?h('div',{class:'muted',text:'化形材料：'+p.evoCost.map(function(z){return z.name+' '+z.have+'/'+z.n}).join('、')+'　化形后攻防 ×1.3'}):null])}
 
@@ -5577,7 +5579,13 @@ for(const rg of(pv.regions??[]).filter((r)=>r.open).slice(0,7))out.push(H([B(`${
 }
 out.push(DIV,h4("喂养"));
 for(const f of(pv.feed??[]).slice(0,3))out.push(H([B(`${f.name} +${f.xp}`,"do:pet.feed:"+f.id),muted(`×${f.n}`)]));
-if(p.evoLv)out.push(DIV,H([B(`化形（${p.evoLv} 级）`,"do:pet.evolve",{variant:"primary",disabled:!p.canEvolve}),muted(p.evoCost.map((z)=>`${z.name} ${z.have}/${z.n}`).join("、")+" · 攻防 ×1.3")]));
+if(p.evoLv){
+
+
+const lack=(p.evoCost??[]).filter((z)=>z.have<z.n);
+const lb=p.canEvolve?"化形":(p.lv??0)<p.evoLv?`化形（需 ${p.evoLv} 级）`:lack.length?`化形（缺 ${lack.map((z) => `${z.name}×${z.n - z.have}`).join("、")}）`:"化形";
+out.push(DIV,H([B(lb,"do:pet.evolve",{variant:"primary",disabled:!p.canEvolve}),muted(p.evoCost.map((z)=>`${z.name} ${z.have}/${z.n}`).join("、")+" · 攻防 ×1.3")]));
+}
 }
 }else if(sub==="skills"){
 out.push(h4("功法（被动，择一修炼）"));

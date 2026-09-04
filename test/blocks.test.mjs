@@ -185,6 +185,19 @@ test("blocks: 灵田 rows on 洞府, and the 灵兽 / 淬炼 sub-pages of 行囊
   let st = validate(b);
   assert.match(textOf(b), /灵狐/);
   assert.ok(st.nodes < 500, `pet page: ${st.nodes} nodes`);
+  // 化形按钮要说清到底卡在哪：满级但缺材料时不能再写「化形（10 级）」——
+  // 玩家看到自己 20 级会以为坏了（论坛原话：「20级了还不能化形」）。
+  const evoLabel = () => buttons(b).find((x) => x.action === "do:pet.evolve")?.label ?? "";
+  assert.match(evoLabel(), /需 10 级/, "0 级时卡的是等级，就说等级");
+  site.setChar(30, (c) => { c.pet.lv = 20; });
+  b = await site.action(30, "sub:pet");
+  assert.match(evoLabel(), /缺 .+×\d/, `满级缺材料时要点名缺什么，实际「${evoLabel()}」`);
+  site.setChar(30, (c) => { c.inv.stack.m_yaodan = 9; c.inv.stack.m_xuanyuan = 9; });
+  b = await site.action(30, "sub:pet");
+  assert.equal(evoLabel(), "化形", "等级材料都够时就是干净的「化形」");
+  b = await site.action(30, "do:pet.evolve");
+  assert.equal(site.char(30).pet.ev, 1, "真的化形了");
+  b = await site.action(30, "sub:pet");
   const send = buttons(b).find((x) => x.action.startsWith("do:pet.send:"));
   assert.ok(send, "each unlocked region offers a dispatch");
   b = await site.action(30, send.action);
